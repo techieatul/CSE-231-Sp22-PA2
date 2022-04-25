@@ -4,15 +4,15 @@ export type Stmt<A> =
   | { a?:A, tag:"varInit", name: string, value: Var<A>}
   | { a?:A, tag: "expr", expr: Expr<A> }
   | { a?:A, tag: "return", return?: Expr<A>}
-  | {a?:A, tag: "FuncDef", name: string, params: TypedVar[], ret: VarType, init: Var<A>[], body: Stmt<A>[]}
+  | {a?:A, tag: "FuncDef", name: string, params: TypedVar[], ret: varType, init: Var<A>[], body: Stmt<A>[]}
   | { a?:A, tag: "pass"}
-  | {a?:A, tag:"if",cond:Expr<A>,ifbody:Stmt<A>[],elif?:Array<Elif<A>>,else?:Else<A>,return?:VarType}
+  | {a?:A, tag:"if",cond:Expr<A>,ifbody:Stmt<A>[],elif?:Array<Elif<A>>,else?:Else<A>,return?:varType}
   | {a?:A, tag:"while",cond:Expr<A>,body:Stmt<A>[]}
 
 
 
-export type Elif<A> = {a?:A,cond:Expr<A>,body:Stmt<A>[],return?:VarType};
-export type Else<A> = {a?:A,body:Stmt<A>[],return?:VarType};
+export type Elif<A> = {a?:A,cond:Expr<A>,body:Stmt<A>[],return?:varType};
+export type Else<A> = {a?:A,body:Stmt<A>[],return?:varType};
 export type Expr<A> =
   //  { a?:A, tag: "num", value: number } // This is replaced by literal
   | { a?:A, tag: "id", name: string }
@@ -29,11 +29,25 @@ export enum UniOp {Not = "not", Minus = "-"}
 
 export enum VarType {int="int",bool="bool",none="none"}
 
-export const TypeMap = new Map<string, VarType>([
-  ["int", VarType.int],
-  ["bool", VarType.bool],
-  ["none", VarType.none],
-]);
+
+
+export type varType = 
+| {tag:"int",value:VarType.int}
+| {tag:"bool",value:VarType.bool}
+| {tag:"none",value:VarType.none}
+| {tag:"object",value:string}
+
+// export const TypeMap = new Map<string, VarType>([
+//   ["int", VarType.int],
+//   ["bool", VarType.bool],
+//   ["none", VarType.none],
+// ]);
+
+export const TypeMap = new Map<string, varType>([
+     ["int", {tag:"int",value:VarType.int}],
+     ["bool", {tag:"bool",value:VarType.bool}],
+     ["none", {tag:"none",value:VarType.none}],
+   ]);
 
 export const UniOpMap = new Map<string,UniOp>([
   ["not", UniOp.Not],
@@ -68,13 +82,13 @@ export const BinBoolOpMap = new Map<string,BinaryOP>([
 
 export type Program<A> = {a?:A,tag:"program",var: Var<A>[], funcDef:FuncDef<A>[],stmts: Stmt<A>[]}
 
-export type Var<A> = {a?: A,name: string, type: VarType, value: Literal<A>}
+export type Var<A> = {a?: A,name: string, type: varType, value: Literal<A>}
 
-export type FuncDef<A> = {a?: A,name: string, params: TypedVar[], ret: VarType, init: Var<A>[], body: Stmt<A>[]}
+export type FuncDef<A> = {a?: A,name: string, params: TypedVar[], ret: varType, init: Var<A>[], body: Stmt<A>[]}
 
-export type TypedVar = {name: string, type: VarType}
+export type TypedVar = {name: string, type: varType}
 
 export type Literal<A> = 
-  { a?:A,tag:"num",value:number,type:VarType.int}
-| { a?:A, tag: "bool",value:boolean,type:VarType.bool}
-| { a?:A, tag: "none",value:null,type:VarType.none}
+  { a?:A,tag:"num",value:number,type:{tag:"int",value:VarType.int}}
+| { a?:A, tag: "bool",value:boolean,type:{tag:"bool",value:VarType.bool}}
+| { a?:A, tag: "none",value:null,type:{tag:"none",value:VarType.none}}

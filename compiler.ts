@@ -1,31 +1,38 @@
 import { join } from 'path';
 import { isLiteralExpression } from 'typescript';
 import wabt from 'wabt';
-import {Stmt, Expr, VarType, BinaryOP,UniOp,Literal} from './ast';
+import {Stmt, Expr, VarType, BinaryOP,UniOp,Literal,varType} from './ast';
 import {parseProgram} from './parser';
 import { tcProgram } from './tc';
 
 
 type LocalEnv = Map<string, boolean>;
 var loop_count = 0;
-function variableNames(stmts: Stmt<VarType>[]) : string[] {
+function variableNames(stmts: Stmt<varType>[]) : string[] {
   const vars : Array<string> = [];
+  var initEnv : Map<string, boolean> = new Map();
   stmts.forEach((stmt) => {
     //if(stmt.tag === "assign" || stmt.tag==="varInit") { vars.push(stmt.name); }
-    if(stmt.tag==="varInit") { vars.push(stmt.name); }
+    if(stmt.tag==="varInit") { 
+      if(initEnv.has(stmt.name)){
+        throw new Error("Duplicate decalaration inside same scope");
+      }
+      vars.push(stmt.name); 
+      initEnv.set(stmt.name,true);
+    }
   });
   return vars;
 }
 
-function funs(stmts: Stmt<VarType>[]) : Stmt<VarType>[] {
+function funs(stmts: Stmt<varType>[]) : Stmt<varType>[] {
   return stmts.filter(stmt => stmt.tag === "FuncDef");
 }
 
-function nonFuns(stmts: Stmt<VarType>[]) : Stmt<VarType>[] {
+function nonFuns(stmts: Stmt<varType>[]) : Stmt<varType>[] {
   return stmts.filter(stmt => stmt.tag !== "FuncDef");
 }
 
-function varsFunsStmts(stmts: Stmt<VarType>[]) : [string[], Stmt<VarType>[], Stmt<VarType>[]] {
+function varsFunsStmts(stmts: Stmt<varType>[]) : [string[], Stmt<varType>[], Stmt<varType>[]] {
   return [variableNames(stmts), funs(stmts), nonFuns(stmts)];
 }
 
@@ -61,7 +68,7 @@ export function BinopStmts(op : BinaryOP) {
 // To handle unary Op
 
 
-export function codeGenExpr(expr : Expr<VarType>, locals : LocalEnv) : Array<string> {
+export function codeGenExpr(expr : Expr<varType>, locals : LocalEnv) : Array<string> {
   switch(expr.tag) {
     case "literal": 
          switch(expr.literal.tag){
@@ -71,6 +78,7 @@ export function codeGenExpr(expr : Expr<VarType>, locals : LocalEnv) : Array<str
                        case true: return [`(i32.const 1)`];
                        case false: return [`(i32.const 0)`];
                  }
+            case "none":return [`(i32.const 0)`];
 
          }
          
@@ -107,7 +115,7 @@ export function codeGenExpr(expr : Expr<VarType>, locals : LocalEnv) : Array<str
       const valStmts = expr.args.map(e => codeGenExpr(e, locals)).flat();
       let toCall = expr.name;
       if(expr.name === "print") {
-        switch(expr.args[0].a) {
+        switch(expr.args[0].a.tag) {
           case "bool": toCall = "print_bool"; break;
           case "int": toCall = "print_num"; break;
           case "none": toCall = "print_none"; break;
@@ -144,7 +152,7 @@ export function compile(source : string) : string {
     retType = "(result i32)";
     retVal = "(local.get $scratch)"
   }
-
+//;;(func $print_bool (import "imports" "print_bool") (param i32) (result i32))
   return `
     (module
       (func $print_num (import "imports" "print_num") (param i32) (result i32))
@@ -160,7 +168,7 @@ export function compile(source : string) : string {
   `;
 }
 
-export function codeGenLit(l:Literal<VarType>){
+export function codeGenLit(l:Literal<varType>){
   switch(l.tag){
     case "num":
       return [`(i32.const ${l.value})`]
@@ -170,7 +178,7 @@ export function codeGenLit(l:Literal<VarType>){
   }
 }
 
-export function codeGenStmt(stmt : Stmt<VarType>, locals : LocalEnv) : Array<string> {
+export function codeGenStmt(stmt : Stmt<varType>, locals : LocalEnv) : Array<string> {
   switch(stmt.tag) {
     case "FuncDef":
       const withParamsAndVariables = new Map<string, boolean>(locals.entries());
@@ -225,9 +233,24 @@ export function codeGenStmt(stmt : Stmt<VarType>, locals : LocalEnv) : Array<str
     case "while":
       var whileCond = codeGenExpr(stmt.cond,locals).flat().join("\n");
       var whileBody = stmt.body.flatMap((b)=>{
+        if(b.tag=="varInit"){
+          throw new Error("Variable Initialization not allowed inside while");
+        }
         return codeGenStmt(b,locals)
       }).join('\n');
-      var whileCode = [`(loop $loop_${loop_count} ${whileBody} ${whileCond} br_if $loop_${loop_count})`];
+      //var whileCode = [`(loop $loop_${loop_count} ${whileBody} ${whileCond} br_if $loop_${loop_count})`
+                      //];
+      var whileCode = [`(block $loop_${loop_count}end
+                           (loop $loop_${loop_count}
+                            ${whileCond} 
+                            (i32.eqz)
+                            (br_if $loop_${loop_count}end)
+                            ${whileBody}
+                            (br $loop_${loop_count})
+
+                            )
+                        )
+                    `];      
       loop_count++;
       return whileCode;
 
@@ -235,6 +258,9 @@ export function codeGenStmt(stmt : Stmt<VarType>, locals : LocalEnv) : Array<str
       var ifCond = codeGenExpr(stmt.cond,locals).flat().join('\n');
       
       var ifBody = stmt.ifbody.flatMap((b)=>{
+        if(b.tag=="varInit"){
+          throw new Error("Variable Initialization not allowed inside If");
+        }
         return codeGenStmt(b,locals);
       }).join('\n');
 
@@ -263,6 +289,9 @@ export function codeGenStmt(stmt : Stmt<VarType>, locals : LocalEnv) : Array<str
         `]
       }else if(typeof stmt.else !=='undefined'){
         var elseBody = stmt.else.body.flatMap((b)=>{
+          if(b.tag=="varInit"){
+            throw new Error("Variable Initialization not allowed inside else body");
+          }
           return codeGenStmt(b,locals);
         }).join('\n');
 
@@ -299,16 +328,4 @@ export function codeGenStmt(stmt : Stmt<VarType>, locals : LocalEnv) : Array<str
 
 
 
-// function codeGen(stmt: Stmt<null>) : Array<string> {
-//   switch(stmt.tag) {
-//     case "assign":
-//       var valStmts = codeGenExpr(stmt.value);
-//       return valStmts.concat([`(local.set $${stmt.name})`]);
-//     case "expr":
-//       var exprStmts = codeGenExpr(stmt.expr);
-//       return exprStmts.concat([`(local.set $$last)`]);
-//     default:
-//       throw new Error("ReferenceError: tag not defined");
-//   }
-// }
 

@@ -2,10 +2,10 @@ import { Type } from "binaryen";
 import {parser} from "lezer-python";
 import {TreeCursor} from "lezer-tree";
 import { createImmediatelyInvokedFunctionExpression } from "typescript";
-import {BinaryOP,Expr, UniOpMap,Stmt, VarType,TypeMap,Var, BinOpMap,Literal, TypedVar,Elif,Else} from "./ast";
+import {BinaryOP,Expr, UniOpMap,Stmt, VarType,TypeMap,Var, BinOpMap,Literal, TypedVar,Elif,Else,varType} from "./ast";
 
 const mySet = new Set();
-export function traverseExpr(c : TreeCursor, s : string) : Expr<VarType> {
+export function traverseExpr(c : TreeCursor, s : string) : Expr<varType> {
   //console.log(c.type.name)
   switch(c.type.name) {
     case "Number":
@@ -15,7 +15,11 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<VarType> {
         tag: "literal",
         literal: myLit
       }
-    
+    case "None":
+      return {
+        tag:"literal",
+        literal:{tag:"none",value:null,type:{tag:"none",value:VarType.none}}
+      }
     case "Boolean": {
       var myBoolName = s.substring(c.from, c.to);
       var myBoolLit = traverseLiteral(c,s,myBoolName);
@@ -113,16 +117,16 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<VarType> {
   }
 }
 
-export function traverseLiteral(c : TreeCursor, s : string, value : string,type?: VarType): Literal<VarType>{
+export function traverseLiteral(c : TreeCursor, s : string, value : string,type?: varType): Literal<varType>{
   switch(String(c.node.type.name)){
     case "Number":
-      return {tag:"num",value:Number(value),type:VarType.int};
+      return {tag:"num",value:Number(value),type:{tag:"int",value:VarType.int}};
     case "Boolean":
-      if(value=="True"){return {tag:"bool",value:true,type:VarType.bool};}
-      if(value=="False"){return {tag:"bool",value:false,type:VarType.bool};}
+      if(value=="True"){return {tag:"bool",value:true,type:{tag:"bool",value:VarType.bool}};}
+      if(value=="False"){return {tag:"bool",value:false,type:{tag:"bool",value:VarType.bool}};}
       break;
     case "None":
-      return {tag:"none",value:null,type:VarType.none};
+      return {tag:"none",value:null,type:{tag:"none",value:VarType.none}};
     default:
       // Here check if its an expression and hanle accordingly
       throw new Error(`Expected \`${type}\`; but got \`${String(c.node.type.name)}\``);
@@ -135,7 +139,7 @@ export function isExpression(e:string){
   return exprStatements.includes(e);
 }
 
-export function traverseTypeDef(c : TreeCursor, s : string, name:string): Var<VarType> {
+export function traverseTypeDef(c : TreeCursor, s : string, name:string): Var<varType> {
 
   // Todo: Need to add checker for x:int = <expr> 
   switch(c.node.type.name){
@@ -165,7 +169,7 @@ export function traverseTypeDef(c : TreeCursor, s : string, name:string): Var<Va
   }
 }
 
-export function traverseType(s : string, t : TreeCursor) : VarType {
+export function traverseType(s : string, t : TreeCursor) : varType {
   switch(t.type.name) {
     case "VariableName":
       const name = s.substring(t.from, t.to);
@@ -200,7 +204,7 @@ export function traverseParameters(s : string, t : TreeCursor) : TypedVar[] {
   return parameters;
 }
 
-export function checkElif(c:TreeCursor,s:string,ElifArray:Array<Elif<VarType>>){
+export function checkElif(c:TreeCursor,s:string,ElifArray:Array<Elif<varType>>){
   if(c.type.name!="elif"){
     return;
   }
@@ -213,6 +217,9 @@ export function checkElif(c:TreeCursor,s:string,ElifArray:Array<Elif<VarType>>){
   while(c.nextSibling()){
     elifbody.push(traverseStmt(c,s));
   }
+  if(elifbody.length==0){
+    throw new Error ("Empty elif body")
+  }
   c.parent() // go back to body
   ElifArray.push({cond:elifcond,body:elifbody});
   c.nextSibling(); // Again check for elif
@@ -222,7 +229,7 @@ export function checkElif(c:TreeCursor,s:string,ElifArray:Array<Elif<VarType>>){
 
 }
 
-export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
+export function traverseStmt(c : TreeCursor, s : string) : Stmt<varType> {
   switch(c.node.type.name) {
     case "AssignStatement":
       c.firstChild(); // go to name
@@ -259,6 +266,10 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
       while(c.nextSibling()){
         ifBodyStmt.push(traverseStmt(c,s));
       }
+
+      if(ifBodyStmt.length == 0){
+        throw new Error ("Empty if body\n");
+      }
       // Does the ifbody has return statement?
       // Should check in parser or typechecker?
 
@@ -266,7 +277,7 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
 
       //check if we have elif
       c.nextSibling(); //-> Here we are at elif or else or body ends
-      var myLocalElifArr:Array<Elif<VarType>> = []
+      var myLocalElifArr:Array<Elif<varType>> = []
       // recursive function to gather all elif as we can have multiple elif
 
       checkElif(c,s,myLocalElifArr);
@@ -293,6 +304,9 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
         
         while(c.nextSibling()){
           elsebody.push(traverseStmt(c,s));
+        }
+        if(elsebody.length==0){
+          throw new Error ("Empty else body\n");
         }
         c.parent()
       }
@@ -346,7 +360,7 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
       c.nextSibling(); // Focus on ParamList
       var params = traverseParameters(s, c)
       c.nextSibling(); // Focus on Body or TypeDef
-      let ret : VarType = VarType.none;
+      let ret : varType = {tag:"none",value:VarType.none};
       let maybeTD = c;
       if(maybeTD.type.name === "TypeDef") {
         c.firstChild();
@@ -359,7 +373,7 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
       while(c.nextSibling()) {
         body.push(traverseStmt(c,s));
       }
-      const varInit:Var<VarType>[] = [];
+      const varInit:Var<varType>[] = [];
 
       // For VarInit field in FuncDef
       body.forEach((b)=>{
@@ -398,7 +412,7 @@ export function traverseStmt(c : TreeCursor, s : string) : Stmt<VarType> {
   }
 }
 
-export function traverse(c : TreeCursor, s : string) : Array<Stmt<VarType>> {
+export function traverse(c : TreeCursor, s : string) : Array<Stmt<varType>> {
   switch(c.node.type.name) {
     case "Script":
       const stmts = [];
@@ -412,7 +426,7 @@ export function traverse(c : TreeCursor, s : string) : Array<Stmt<VarType>> {
       throw new Error("ParseError: Could not parse program at " + c.node.from + " " + c.node.to);
   }
 }
-export function parseProgram(source : string) : Array<Stmt<VarType>> {
+export function parseProgram(source : string) : Array<Stmt<varType>> {
   const t = parser.parse(source);
   return traverse(t.cursor(), source);
 }

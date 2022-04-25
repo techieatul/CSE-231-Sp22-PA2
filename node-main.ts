@@ -35,7 +35,7 @@ var source:string = "def f(x:int)->int:\n\tif x>=4:\n\t\treturn 1\n\tx=x-1\n\tf(
 const input = process.argv[2];
 const result = compile(source);
 console.log(result);
-run(result, {}).then((value) => {
+run(result, {importObject}).then((value) => {
   console.log(value);
 });
 

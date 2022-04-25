@@ -2,23 +2,24 @@ import { ConvertSInt32ToFloat32 } from 'binaryen';
 import { endianness, type } from 'os';
 import { env } from 'process';
 import { isJSDocNamepathType, parseCommandLine } from 'typescript';
-import {VarType,BinBoolOpMap,Stmt,Expr,BinaryOP,Var,FuncDef,TypedVar,Literal,Elif,Else, UniOp} from './ast'
+import {VarType,BinBoolOpMap,Stmt,Expr,BinaryOP,Var,FuncDef,TypedVar,Literal,Elif,Else, UniOp,varType} from './ast'
 
 type idMap = {
-    vars: Map<string,VarType>,
-    func: Map<string,[VarType[],VarType]>,
-    ret: VarType
+    vars: Map<string,varType>,
+    func: Map<string,[varType[],varType]>,
+    ret: varType
 };
 
 
 
-export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
+export function tcProgram(p : Stmt<any>[]) : Stmt<varType>[] {
     //const functions = new Map<string, [VarType[], VarType]>();
     //const globals = new Map<string, VarType>();
     const EnvMaps:idMap = {} as idMap;
-    EnvMaps.vars = new Map<string, VarType>();
-    EnvMaps.func = new Map<string,[VarType[],VarType]>();
-    EnvMaps.ret = VarType.none;
+    EnvMaps.vars = new Map<string, varType>();
+    EnvMaps.func = new Map<string,[varType[],varType]>();
+    EnvMaps.ret = {tag:"none",value:VarType.none};
+    var start_ret:varType = {tag:"none",value:VarType.none};
     p.forEach(s => {
       if(s.tag === "FuncDef") {
         EnvMaps.func.set(s.name, [s.params.map(p => p.type), s.ret]);
@@ -27,7 +28,7 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
     return p.map(s => {
           var insideFunc:boolean = false;
           if(s.tag=="FuncDef"){insideFunc=true}
-          const res = tcStmt(s, EnvMaps,VarType.none,insideFunc);
+          const res = tcStmt(s, EnvMaps,start_ret,insideFunc);
           return res;
       });
 
@@ -44,10 +45,10 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
     // });
   }
    
-  export function tcElif(s:Elif<any>,localEnv:idMap,currentReturn:VarType,insideFunc:boolean){
+  export function tcElif(s:Elif<any>,localEnv:idMap,currentReturn:varType,insideFunc:boolean){
       var myElifCond = tcExpr(s.cond,localEnv,insideFunc);
-      if(myElifCond.a !== VarType.bool){
-        throw new Error(`Condition expression cannot be of type ${myElifCond.a}`);
+      if(myElifCond.a.value !== VarType.bool){
+        throw new Error(`Condition expression cannot be of type ${myElifCond.a.value}`);
     }
       var myElifBody:Stmt<any>[] =[];
       s.body.forEach((b)=>{
@@ -58,7 +59,7 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
   }
 
 
-  export function tcElse(s:Else<any>,localEnv:idMap,currentReturn:VarType,insideFunc:boolean){
+  export function tcElse(s:Else<any>,localEnv:idMap,currentReturn:varType,insideFunc:boolean){
       var myElseBody:Stmt<any>[] =[];
       s.body.forEach((b)=>{
           myElseBody.push(tcStmt(b,localEnv,currentReturn,insideFunc));
@@ -67,11 +68,11 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
       return {...s,body:myElseBody};
   }
 
-  export function tcVarInit(s:Var<any>): Var<VarType>{
+  export function tcVarInit(s:Var<any>): Var<varType>{
 
     var myLit = tcLiteral(s.value);
-    if(s.type!=myLit.a){
-        throw new Error(`Expected ${s.type}; but got ${myLit.a}`);
+    if(s.type.value!=myLit.a.value){
+        throw new Error(`Expected ${s.type.tag}; but got ${myLit.a.tag}`);
     }
 
     return {...s,a:myLit.a,value:myLit};
@@ -79,7 +80,7 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
   }
 
   
-  export function tcStmt(s : Stmt<any>, localEnv:idMap, currentReturn : VarType, insideFunc:boolean) : Stmt<VarType> {
+  export function tcStmt(s : Stmt<any>, localEnv:idMap, currentReturn : varType, insideFunc:boolean) : Stmt<varType> {
 
     switch(s.tag) {
       case "varInit":{
@@ -92,8 +93,8 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
 
       case "FuncDef": {
         var FuncEnvMaps:idMap = {} as idMap;
-        var bodyvars = new Map<string, VarType>(localEnv.vars.entries());
-        var funcvars = new Map<string,[VarType[],VarType]>(localEnv.func.entries());
+        var bodyvars = new Map<string, varType>(localEnv.vars.entries());
+        var funcvars = new Map<string,[varType[],varType]>(localEnv.func.entries());
         s.params.forEach(p => { bodyvars.set(p.name, p.type)});
         FuncEnvMaps.vars = bodyvars;
         FuncEnvMaps.func = funcvars; 
@@ -116,8 +117,8 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
         if(!localEnv.vars.has(s.name)){
             throw new Error(`Not a variable ${s.name}`)
         }
-        if(localEnv.vars.get(s.name) !== rhs.a) {
-          throw new Error(`Expected \`${localEnv.vars.get(s.name)}\`; but got ${rhs.a}`);
+        if(localEnv.vars.get(s.name).value !== rhs.a.value) {
+          throw new Error(`Expected \`${localEnv.vars.get(s.name).value}\`; but got ${rhs.a.value}`);
         }
         else {
           localEnv.vars.set(s.name, rhs.a);
@@ -128,8 +129,8 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
 
       case "if":{
           var myIfCond = tcExpr(s.cond,localEnv,insideFunc);
-          if(myIfCond.a !== VarType.bool){
-            throw new Error(`Condition expression cannot be of type ${myIfCond.a}`);
+          if(myIfCond.a.value !== VarType.bool){
+            throw new Error(`Condition expression cannot be of type ${myIfCond.a.value}`);
           }
           var myIfBody:Stmt<any>[] = [];
           s.ifbody.forEach((b)=>{
@@ -170,7 +171,7 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
           })
 
           var myWhileCond = tcExpr(s.cond,localEnv,insideFunc);
-          if(myWhileCond.a!==VarType.bool){
+          if(myWhileCond.a.value!==VarType.bool){
               throw new Error(`Condition expression be ${myWhileCond.a}`)
           }
           return {...s,cond:myWhileCond,body:myWhileBody}
@@ -181,7 +182,7 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
       }
       
       case "pass": {
-          return {...s,a:VarType.none};
+          return {...s,a:{tag:"none",value:VarType.none}};
       }
 
       case "return": {
@@ -195,17 +196,17 @@ export function tcProgram(p : Stmt<any>[]) : Stmt<VarType>[] {
             }
             return { ...s, return: valTyp,a:valTyp.a};
         }
-        if(currentReturn!=VarType.none){
+        if(currentReturn.value!=VarType.none){
             throw new Error(`Expected ${currentReturn}; but got None`);
         }
-        return {...s,a:VarType.none};
+        return {...s,a:{tag:"none",value:VarType.none}};
         
       }
     }
   }
 
 
-export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr<VarType>{
+export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr<varType>{
     switch(expr.tag){
         case "id":
             if(!localenv.vars.has(expr.name)){
@@ -218,7 +219,7 @@ export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr
             if(expr.name === "print") {
                 if(expr.args.length !== 1) { throw new Error("print expects a single argument"); }
                 const newArgs = [tcExpr(expr.args[0], localenv,insideFunc)];
-                const res : Expr<VarType> = { ...expr, a: VarType.none, args: newArgs } ;
+                const res : Expr<varType> = { ...expr, a: {tag:"none",value:VarType.none}, args: newArgs } ;
                 return res;
               }
               if(!localenv.func.has(expr.name)) {
@@ -249,25 +250,25 @@ export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr
             var right = tcExpr(expr.right_opr,localenv,insideFunc);
             var opr = expr.opr;
             if(checkOpInt(opr)){
-                if(left.a==VarType.int && right.a==VarType.int){
+                if(left.a.value==VarType.int && right.a.value==VarType.int){
                     if(opr===BinaryOP.Gt || opr===BinaryOP.Lt || opr===BinaryOP.Gte || opr===BinaryOP.Lte || opr===BinaryOP.Eq || opr===BinaryOP.Neq){
-                        return {...expr,left_opr:left, right_opr:right,a:VarType.bool};
+                        return {...expr,left_opr:left, right_opr:right,a:{tag:"bool",value:VarType.bool}};
                     }
-                    return {...expr,left_opr:left, right_opr:right,a:VarType.int};
+                    return {...expr,left_opr:left, right_opr:right,a:{tag:"int",value:VarType.int}};
                 }
-                throw new Error(`Cannot apply operator \`${opr}\` on types \`${left.a}\` and ${right.a}`);
+                throw new Error(`Cannot apply operator \`${opr}\` on types \`${left.a.value}\` and ${right.a.value}`);
 
             }
             if (checkOpBoth(opr)){
-                if(left.a===right.a){
+                if(left.a.value===right.a.value){
                     if(opr===BinaryOP.Gt || opr===BinaryOP.Lt || opr===BinaryOP.Gte || opr===BinaryOP.Lte || opr===BinaryOP.Eq || opr===BinaryOP.Neq){
-                        return {...expr,left_opr:left, right_opr:right,a:VarType.bool};
+                        return {...expr,left_opr:left, right_opr:right,a:{tag:"bool",value:VarType.bool}};
                     }
                     
                     return {...expr,left_opr:left,right_opr:right,a:left.a};
 
                 }else{
-                    throw new Error(`Cannot apply operator \`${opr}\` on types \`${left.a}\` and ${right.a}`);
+                    throw new Error(`Cannot apply operator \`${opr}\` on types \`${left.a.value}\` and ${right.a.value}`);
                 }
             } 
             break;
@@ -276,15 +277,15 @@ export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr
             var myOpr = expr.opr;
             var myUniExpr = tcExpr(expr.right,localenv,insideFunc);
             if(myOpr===UniOp.Not){
-                if(myUniExpr.a == VarType.bool){
-                    return {...expr,right:myUniExpr,a:VarType.bool};
+                if(myUniExpr.a.value == VarType.bool){
+                    return {...expr,right:myUniExpr,a:{tag:"bool",value:VarType.bool}};
                 }else{
                     throw new Error(`Cannot apply operator \`not\` on type \`int\``);
                 }
 
             }else{
-                if(myUniExpr.a==VarType.int){
-                    return {...expr,right:myUniExpr,a:VarType.int};
+                if(myUniExpr.a.value==VarType.int){
+                    return {...expr,right:myUniExpr,a:{tag:"int",value:VarType.int}};
                 }else{
                     throw new Error(`Cannot apply operator \`-\` on type \`bool\``);
                 }
@@ -305,15 +306,15 @@ export function tcExpr(expr: Expr<any>, localenv:idMap,insideFunc:boolean): Expr
 }
 
 
-export function tcLiteral(literal: Literal<any>): Literal<VarType> {
+export function tcLiteral(literal: Literal<any>): Literal<varType> {
 
     switch(literal.tag){
         case "num":
-            return {...literal,a:VarType.int};
+            return {...literal,a:{tag:"int",value:VarType.int}};
         case "bool":
-            return {...literal,a:VarType.bool};
+            return {...literal,a:{tag:"bool",value:VarType.bool}};
         case "none":
-            return {...literal,a:VarType.none};
+            return {...literal,a:{tag:"none",value:VarType.none}};
         default:
             throw new Error(`Invalid type annotation`);
     }

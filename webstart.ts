@@ -3,6 +3,7 @@ import {compile, run} from './compiler';
 
 document.addEventListener("DOMContentLoaded", async () => {
   function display(arg : string) {
+    
     const elt = document.createElement("pre");
     document.getElementById("output").appendChild(elt);
     elt.innerText = arg;
@@ -22,7 +23,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         return arg;
       },
       print_none: (arg: any) => {
-       // display("None");
+        display("None");
         return arg;
       }
     },
@@ -37,8 +38,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const code = document.getElementById("generated-code");
       code.textContent = wat;
       const result = await run(wat, importObject);
-      console.log(result)
-      if(result!=undefined){display(String(result));}
+     // console.log(result)
+     // if(result!=undefined){display(String(result));}
       //output.textContent += display(String(result))
       //String(result)
       
